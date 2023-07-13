@@ -165,16 +165,20 @@ async function generateValidatorInfo() {
             const balance = res.data.data.balance;
             const credentials = res.data.data.validator.withdrawal_credentials.replace("0x", "");
             const validatorIndex = Number(res.data.data.index);
-            console.log(`Key Index : ${keyIndex}; Validator Index : ${validatorIndex}; Credentials : ${credentials}`);
-            result.push({
-                network: option.network,
-                keyIndex,
-                validatorKey,
-                balance,
-                credentials,
-                validatorIndex,
-                withdrawalAddress: option.withdrawalAddress,
-            });
+            if (credentials.substring(0, 2) !== "01") {
+                console.log(
+                    `Key Index : ${keyIndex}; Validator Index : ${validatorIndex}; Credentials : ${credentials}`
+                );
+                result.push({
+                    network: option.network,
+                    keyIndex,
+                    validatorKey,
+                    balance,
+                    credentials,
+                    validatorIndex,
+                    withdrawalAddress: option.withdrawalAddress,
+                });
+            }
         } catch (e) {
             //
         }
