@@ -21,11 +21,22 @@ interface IKeyFile {
     name: string;
 }
 interface IValidatorInfo {
+    network: string;
     keyIndex: number;
     validatorKey: string;
     balance: string;
     credentials: string;
     validatorIndex: number;
+    withdrawalAddress: string;
+}
+
+interface IGenerateValidatorInfoOption {
+    network: string;
+    withdrawalAddress: string;
+}
+
+interface IGenerateBLSExecutionOption {
+    mnemonic: string;
 }
 
 interface IOption {
@@ -64,9 +75,68 @@ async function getKeyFiles(keyPath: string): Promise<IKeyFile[]> {
     });
 }
 
+async function getCommand(): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
+        const schema = {
+            properties: {
+                command: {
+                    description: "1: Generate Validator's Info. 2: Generate BLS to execution change",
+                    pattern: /^[1-2]/,
+                    message: "Command must be only 1 or 2",
+                    required: true,
+                },
+            },
+        };
+        prompt.start();
+        prompt.get(schema, (err: any, result: any) => {
+            if (err) reject(err);
+            resolve(Number(result.command));
+        });
+    });
+}
+
 async function main() {
+    const command = await getCommand();
+
+    if (command === 1) {
+        await generateValidatorInfo();
+    } else {
+        await generateBLSExecution();
+    }
+}
+
+async function getGenerateValidatorInfoOption(): Promise<IGenerateValidatorInfoOption> {
+    return new Promise<IGenerateValidatorInfoOption>((resolve, reject) => {
+        const schema = {
+            properties: {
+                network: {
+                    description: "Enter the network (mainnet, testnet)",
+                    pattern: /^[a-zA-Z\s\-]+$/,
+                    message: "Name must be only letters, spaces, or dashes",
+                    required: true,
+                },
+                withdrawalAddress: {
+                    description: "Enter the address to withdraw",
+                    pattern: /^(0x)[0-9a-f]{40}$/i,
+                    message: "WithdrawalAddress must be only BOA Address(0x...)",
+                    required: true,
+                },
+            },
+        };
+        prompt.start();
+        prompt.get(schema, (err: any, result: any) => {
+            if (err) reject(err);
+            resolve({
+                network: result.network,
+                withdrawalAddress: toChecksumAddress(prefix0X(result.withdrawalAddress)),
+            });
+        });
+    });
+}
+
+async function generateValidatorInfo() {
     const pwd = process.cwd();
-    const option = await getOption();
+    const option = await getGenerateValidatorInfoOption();
 
     let rpc = "";
     if (option.network === "mainnet") {
@@ -77,28 +147,83 @@ async function main() {
         console.log(`network is not available`);
         process.abort();
     }
+    const validatorKeysPath = `${pwd}/data/validator_keys`;
     const result: IValidatorInfo[] = [];
     const client = axios.create();
-    const fileList: IKeyFile[] = await getKeyFiles(option.validatorKeysPath);
+    const fileList: IKeyFile[] = await getKeyFiles(validatorKeysPath);
     for (const file of fileList) {
         const s = file.name.split("_");
         const fullFileName = path.resolve(file.path, file.name);
         const keyData = JSON.parse(fs.readFileSync(fullFileName, "utf-8"));
         const keyIndex = Number(s[3]);
         const validatorKey = keyData.pubkey;
-        const res = await client.get(`https://${rpc}/eth/v1/beacon/states/head/validators/${prefix0X(validatorKey)}`);
-        const balance = res.data.data.balance;
-        const credentials = res.data.data.validator.withdrawal_credentials.replace("0x", "");
-        const validatorIndex = Number(res.data.data.index);
-        console.log(
-            `Key Index : ${keyIndex}; Validator Index : ${validatorIndex}; Credentials : ${credentials}; withdrawalAddress : ${option.withdrawalAddress}`
-        );
-        result.push({ keyIndex, validatorKey, balance, credentials, validatorIndex });
+        try {
+            const res = await client.get(
+                `https://${rpc}/eth/v1/beacon/states/head/validators/${prefix0X(validatorKey)}`
+            );
 
-        const cmd: string = `${pwd}/bin/cmd.sh ${option.network} ${keyIndex} ${validatorIndex} ${credentials} ${option.withdrawalAddress} "${option.mnemonic}"`;
-        await execute(cmd);
+            const balance = res.data.data.balance;
+            const credentials = res.data.data.validator.withdrawal_credentials.replace("0x", "");
+            const validatorIndex = Number(res.data.data.index);
+            console.log(`Key Index : ${keyIndex}; Validator Index : ${validatorIndex}; Credentials : ${credentials}`);
+            result.push({
+                network: option.network,
+                keyIndex,
+                validatorKey,
+                balance,
+                credentials,
+                validatorIndex,
+                withdrawalAddress: option.withdrawalAddress,
+            });
+        } catch (e) {
+            //
+        }
     }
-    console.log(beautify(JSON.stringify(result.sort((a, b) => a.keyIndex - b.keyIndex)), { format: "json" }));
+
+    fs.writeFileSync(
+        `${pwd}/data/validator_info.json`,
+        beautify(JSON.stringify(result.sort((a, b) => a.keyIndex - b.keyIndex)), { format: "json" }),
+        "utf-8"
+    );
+
+    console.log(`Validator Info was saved in "${pwd}/data/validator_info.json"`);
+}
+
+async function getGenerateBLSExecutionOption(): Promise<IGenerateBLSExecutionOption> {
+    return new Promise<IGenerateBLSExecutionOption>((resolve, reject) => {
+        const schema = {
+            properties: {
+                mnemonic: {
+                    description: "Enter the mnemonic",
+                    pattern: /^[a-zA-Z\s]+$/,
+                    message: "Mnemonic must be only letters, spaces",
+                    required: true,
+                },
+            },
+        };
+        prompt.start();
+        prompt.get(schema, (err: any, result: any) => {
+            if (err) reject(err);
+            resolve({
+                mnemonic: result.mnemonic,
+            });
+        });
+    });
+}
+
+async function generateBLSExecution() {
+    console.log("Please block the internet.");
+    const pwd = process.cwd();
+    const option = await getGenerateBLSExecutionOption();
+
+    const validators: IValidatorInfo[] = JSON.parse(fs.readFileSync(`${pwd}/data/validator_info.json`, "utf-8"));
+
+    const client = axios.create();
+    for (const validator of validators) {
+        const cmd: string = `${pwd}/bin/cmd.sh ${validator.network} ${validator.keyIndex} ${validator.validatorIndex} ${validator.credentials} ${validator.withdrawalAddress} "${option.mnemonic}"`;
+        await execute(cmd);
+        // console.log(cmd);
+    }
 }
 
 async function execute(cmd: string): Promise<void> {
@@ -113,48 +238,6 @@ async function execute(cmd: string): Promise<void> {
     });
 }
 
-async function getOption(): Promise<IOption> {
-    return new Promise<IOption>((resolve, reject) => {
-        const schema = {
-            properties: {
-                network: {
-                    description: "Enter the network (mainnet, testnet)",
-                    pattern: /^[a-zA-Z\s\-]+$/,
-                    message: "Name must be only letters, spaces, or dashes",
-                    required: true,
-                },
-                validatorKeysPath: {
-                    description: "Enter the directory where the validator keys are stored",
-                    pattern: /^[a-zA-Z\s\_]+$/,
-                    message: "ValidatorKeysPath must be only letters, spaces, or dashes",
-                    required: true,
-                },
-                withdrawalAddress: {
-                    description: "Enter the address to withdraw",
-                    pattern: /^(0x)[0-9a-f]{40}$/i,
-                    message: "WithdrawalAddress must be only BOA Address(0x...)",
-                    required: true,
-                },
-                mnemonic: {
-                    description: "Enter the mnemonic",
-                    pattern: /^[a-zA-Z\s]+$/,
-                    message: "Mnemonic must be only letters, spaces",
-                    required: true,
-                },
-            },
-        };
-        prompt.start();
-        prompt.get(schema, (err: any, result: any) => {
-            if (err) reject(err);
-            resolve({
-                network: result.network,
-                validatorKeysPath: result.validatorKeysPath,
-                withdrawalAddress: toChecksumAddress(prefix0X(result.withdrawalAddress)),
-                mnemonic: result.mnemonic,
-            });
-        });
-    });
-}
 // We recommend this pattern to be able to use async/await everywhere
 // and properly handle errors.
 main().catch((error) => {

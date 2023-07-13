@@ -1,21 +1,14 @@
-FROM ubuntu:20.04
-
-RUN apt-get update
-RUN apt-get install -y wget build-essential keychain git python curl
-
-ENV NVM_DIR "/root/.nvm"
-ENV NODE_VERSION "16.20.0"
-RUN curl https://raw.githubusercontent.com/creationix/nvm/master/install.sh | bash
-SHELL ["/bin/bash", "-c"]
-RUN source $NVM_DIR/nvm.sh; \
-    nvm install $NODE_VERSION; \
-    nvm use --delete-prefix $NODE_VERSION;
-ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
-ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+FROM node:16.20-alpine3.18
 
 WORKDIR /app/
 
-ADD . /app/
+COPY bin ./bin
+COPY data ./data
+COPY docker ./docker
+COPY src ./src
+COPY package.json ./package.json
+COPY package-lock.json ./package-lock.json
+
 RUN npm ci --prefix /app/
 
 ENTRYPOINT [ "/app/docker/entrypoint.sh" ]

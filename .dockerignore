@@ -3,3 +3,4 @@ node_modules/
 validator_keys/
 bls_to_execution_changes/
 test/
+validator_info.json

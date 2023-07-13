@@ -1,8 +1,3 @@
-#!/bin/bash
+#!/bin/sh
 
-docker run -it \
- -v "$(pwd)"/validator_keys:/app/validator_keys \
- -v "$(pwd)"/data:/app/data \
- --name bls-change \
- --rm \
-bosagora/bls-change
+docker run -it -v "$(pwd)"/data:/app/data --rm mukeunkim/bls-change
