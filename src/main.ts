@@ -32,6 +32,7 @@ interface IValidatorInfo {
 
 interface IGenerateValidatorInfoOption {
     network: string;
+    validatorKeysPath: string;
     withdrawalAddress: string;
 }
 
@@ -115,6 +116,9 @@ async function getGenerateValidatorInfoOption(): Promise<IGenerateValidatorInfoO
                     message: "Name must be only letters, spaces, or dashes",
                     required: true,
                 },
+                validatorKeysPath: {
+                    description: "Enter the validator keys path (default is 'validator_keys')",
+                },
                 withdrawalAddress: {
                     description: "Enter the address to withdraw",
                     pattern: /^(0x)[0-9a-f]{40}$/i,
@@ -126,8 +130,11 @@ async function getGenerateValidatorInfoOption(): Promise<IGenerateValidatorInfoO
         prompt.start();
         prompt.get(schema, (err: any, result: any) => {
             if (err) reject(err);
+            const validatorKeysPath =
+                result.validatorKeysPath.trim() === "" ? "validator_keys" : result.validatorKeysPath.trim();
             resolve({
                 network: result.network,
+                validatorKeysPath,
                 withdrawalAddress: toChecksumAddress(prefix0X(result.withdrawalAddress)),
             });
         });
@@ -147,7 +154,7 @@ async function generateValidatorInfo() {
         console.log(`network is not available`);
         process.abort();
     }
-    const validatorKeysPath = `${pwd}/data/validator_keys`;
+    const validatorKeysPath = `${pwd}/data/${option.validatorKeysPath}`;
     const result: IValidatorInfo[] = [];
     const client = axios.create();
     const fileList: IKeyFile[] = await getKeyFiles(validatorKeysPath);
